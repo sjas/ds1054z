@@ -84,6 +84,12 @@ def main():
         help='The filename template for the image')
     save_screen_parser.add_argument('--overlay', '-o', metavar='RATIO', type=float, default=0.5,
         help='Dim on-screen controls in --save-screen with a mask (default ratio: 0.5)')
+    # ds1054z save-csv
+    action_desc = 'Save a CSV file of the waveform'
+    save_csv_parser = subparsers.add_parser('save-csv', parents=[device_parser],
+        description=action_desc, help=action_desc)
+    save_csv_parser.add_argument('--filename', '-f', metavar='CSV_FILENAME',
+        help='The filename template for the CSV file')
     # ds1054z properties
     action_desc = 'Query properties of the DS1054Z instance'
     properties_parser = subparsers.add_parser('properties', description=action_desc, help=action_desc)
@@ -193,6 +199,18 @@ def main():
         else: print("Saved file: " + filename)
 
     if args.action == 'shell': run_shell(ds)
+
+    if args.action == 'save-csv':
+        # formatting the filename
+        if args.filename: fmt = args.filename
+        else: fmt = 'ds1054z-scope-values_{ts}.csv'
+        ts = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+        filename = fmt.format(ts=ts)
+        scr_file = open(filename, "w")
+        scr_file.write(ds.get_csv())
+        scr_file.close()
+        if not args.verbose: print(filename)
+        else: print("Saved file: " + filename)
 
 def run_shell(ds):
     """ ds : DS1054Z instance """

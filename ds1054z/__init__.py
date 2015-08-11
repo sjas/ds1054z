@@ -7,6 +7,7 @@ import logging
 import re
 import time
 import sys
+import os
 
 import vxi11
 
@@ -167,6 +168,114 @@ class DS1054Z(vxi11.Instrument):
             if self.query(channel + ":DISPlay?") == '1':
                 channel_list.append(channel)
         return channel_list
+
+    # return maximum achieved stop point, or 0 for wrong input parameters
+    # if achieved == requested, then set the start and stop waveform as n1_d and n2_d
+    def is_waveform_from_to(self, n1_d, n2_d):
+        # read current
+        # WAVeform:STARt
+        n1_c = float(self.query(":WAVeform:STARt?"))
+
+        # WAVeform:STOP
+        n2_c = float(self.query(":WAVeform:STOP?"))
+
+        if (n1_d > n2_d) or (n1_d < 1) or (n2_d < 1):
+            # wrong parameters
+            return 0
+
+        elif n2_d < n1_c:
+            # first set n1_d then set n2_d
+            self.write(":WAVeform:STARt " + str(n1_d))
+            time.sleep(0.3)
+            self.write(":WAVeform:STOP " + str(n2_d))
+            time.sleep(0.3)
+
+        else:
+            # first set n2_d then set n1_d
+            self.write(":WAVeform:STOP " + str(n2_d))
+            time.sleep(0.3)
+            self.write(":WAVeform:STARt " + str(n1_d))
+            time.sleep(0.3)
+
+        # read achieved n2
+        n2_a = float(self.query(":WAVeform:STOP?"))
+
+        if n2_a < n2_d:
+            # restore n1_c, n2_c
+            self.is_waveform_from_to(n1_c, n2_c)
+
+        return n2_a
+
+    def get_csv(self):
+        # self.stop()
+        channel_list = self.displayed_channels
+        depth = self.memory_depth
+        csv_buff = ""
+        for channel in channel_list:
+            self.write(":WAVeform:SOURce " + channel)
+            time.sleep(0.2)
+            self.write(":WAVeform:FORMat ASC")
+            time.sleep(0.2)
+            # Maximum - only displayed data when osc. in RUN mode, or full memory data when STOPed
+            self.write(":WAVeform:MODE MAX")
+            time.sleep(0.2)
+            # Get all data available
+            buff = ""
+            # max_chunk is dependent of the wav:mode and the oscilloscope type
+            # if you get on the oscilloscope screen the error message
+            # "Memory lack in waveform reading!", then decrease max_chunk value
+            max_chunk = 100000.0  # tested for DS1104Z
+            if max_chunk > depth:
+                max_chunk = depth
+            n1 = 1.0
+            n2 = max_chunk
+            data_available = True
+            while data_available:
+                display_n1 = n1
+                stop_point = self.is_waveform_from_to(n1, n2)
+                if stop_point == 0:
+                    data_available = False
+                    logger.error("Stop data point index lower then start data point index")
+                    raise NameError("Stop data point index lower then start data point index")
+                elif stop_point < n1:
+                    break
+                elif stop_point < n2:
+                    n2 = stop_point
+                    self.is_waveform_from_to(n1, n2)
+                    data_available = False
+                else:
+                    data_available = True
+                    n1 = n2 + 1
+                    n2 += max_chunk
+                self.write(":WAVeform:DATA?")
+                logger.info("Data from channel " + str(channel) + ", points " +\
+                      str(int(display_n1)) + "-" + str(int(stop_point)) + ": Receiving...")
+                buff_chunks = self.read_raw(int(max_chunk))
+                buff_chunks = buff_chunks.decode('ascii')
+                # Strip TMC Blockheader and terminator bytes
+                buff += DS1054Z._clean_tmc_header(buff_chunks) + ","
+            buff = buff[:-1]
+            buff_list = buff.split(",")
+            buff_rows = len(buff_list)
+            csv_buff_list = csv_buff.split(os.linesep)
+            csv_rows = len(csv_buff_list)
+            current_row = 0
+            if csv_buff == "":
+                csv_first_column = True
+                csv_buff = str(channel) + os.linesep
+            else:
+                csv_first_column = False
+                csv_buff = str(csv_buff_list[current_row]) + "," + str(channel) + os.linesep
+            for point in buff_list:
+                current_row += 1
+                if csv_first_column:
+                    csv_buff += str(point) + os.linesep
+                else:
+                    if current_row < csv_rows:
+                        csv_buff += str(csv_buff_list[current_row]) + "," + str(point) + os.linesep
+                    else:
+                        csv_buff += "," + str(point) + os.linesep
+        return csv_buff
 
 
 def format_hex(byte_str):
