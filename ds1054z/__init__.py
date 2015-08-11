@@ -174,10 +174,10 @@ class DS1054Z(vxi11.Instrument):
     def is_waveform_from_to(self, n1_d, n2_d):
         # read current
         # WAVeform:STARt
-        n1_c = float(self.query(":WAVeform:STARt?"))
+        n1_c = int(self.query(":WAVeform:STARt?"))
 
         # WAVeform:STOP
-        n2_c = float(self.query(":WAVeform:STOP?"))
+        n2_c = int(self.query(":WAVeform:STOP?"))
 
         if (n1_d > n2_d) or (n1_d < 1) or (n2_d < 1):
             # wrong parameters
@@ -186,16 +186,12 @@ class DS1054Z(vxi11.Instrument):
         elif n2_d < n1_c:
             # first set n1_d then set n2_d
             self.write(":WAVeform:STARt " + str(n1_d))
-            time.sleep(0.3)
             self.write(":WAVeform:STOP " + str(n2_d))
-            time.sleep(0.3)
 
         else:
             # first set n2_d then set n1_d
             self.write(":WAVeform:STOP " + str(n2_d))
-            time.sleep(0.3)
             self.write(":WAVeform:STARt " + str(n1_d))
-            time.sleep(0.3)
 
         # read achieved n2
         n2_a = float(self.query(":WAVeform:STOP?"))
@@ -213,21 +209,18 @@ class DS1054Z(vxi11.Instrument):
         csv_buff = ""
         for channel in channel_list:
             self.write(":WAVeform:SOURce " + channel)
-            time.sleep(0.2)
             self.write(":WAVeform:FORMat ASC")
-            time.sleep(0.2)
             # Maximum - only displayed data when osc. in RUN mode, or full memory data when STOPed
             self.write(":WAVeform:MODE MAX")
-            time.sleep(0.2)
             # Get all data available
             buff = ""
             # max_chunk is dependent of the wav:mode and the oscilloscope type
             # if you get on the oscilloscope screen the error message
             # "Memory lack in waveform reading!", then decrease max_chunk value
-            max_chunk = 100000.0  # tested for DS1104Z
+            max_chunk = 100000  # tested for DS1104Z
             if max_chunk > depth:
                 max_chunk = depth
-            n1 = 1.0
+            n1 = 1
             n2 = max_chunk
             data_available = True
             while data_available:
@@ -254,7 +247,6 @@ class DS1054Z(vxi11.Instrument):
                 buff_chunks = buff_chunks.decode('ascii')
                 # Strip TMC Blockheader and terminator bytes
                 buff += DS1054Z._clean_tmc_header(buff_chunks) + ","
-            buff = buff[:-1]
             buff_list = buff.split(",")
             buff_rows = len(buff_list)
             csv_buff_list = csv_buff.split(os.linesep)
